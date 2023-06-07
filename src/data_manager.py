@@ -125,7 +125,7 @@ COLUMNS_TRAINING_DATA_V4 = [
 ]
 
 COLUMNS_TRAINING_DATA_V4_1 = []
-with open(os.path.join(settings.BASE_DIR, 'src', 'conf', 'data', 'v4.1', 'feature_list.txt')) as f:
+with open(os.path.join(settings.BASE_DIR, 'conf', 'data', 'v4.1', 'feature_list.txt')) as f:
     for line in f:
         COLUMNS_TRAINING_DATA_V4_1.append(line.strip())
 
