@@ -2,6 +2,9 @@ import os, sys, logging, argparse, json, warnings, pandas, datetime
 from IPython.display import Image, display 
 warnings.filterwarnings(action='ignore')
 import numpy as np
+from dateutil.relativedelta import relativedelta
+from pykrx import stock, bond
+import pandas_datareader.data as web
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -189,3 +192,87 @@ def calc_mdd(list_x, list_pv):
     plt.show()
 
     return (arr_pv[peak_lower] - arr_pv[peak_upper]) / arr_pv[peak_upper]
+
+def preprocess(data):
+    windows = [5, 10, 20, 60, 120]
+    for window in windows:
+        data['close_ma{}'.format(window)] = \
+            data['close'].rolling(window).mean()
+        data['volume_ma{}'.format(window)] = \
+            data['volume'].rolling(window).mean()
+        data['close_ma%d_ratio' % window] = \
+            (data['close'] - data['close_ma%d' % window]) \
+            / data['close_ma%d' % window]
+        data['volume_ma%d_ratio' % window] = \
+            (data['volume'] - data['volume_ma%d' % window]) \
+            / data['volume_ma%d' % window]
+
+    data['open_lastclose_ratio'] = np.zeros(len(data))
+    data.loc[1:, 'open_lastclose_ratio'] = \
+        (data['open'][1:].values - data['close'][:-1].values) \
+        / data['close'][:-1].values
+    data['high_close_ratio'] = \
+        (data['high'].values - data['close'].values) \
+        / data['close'].values
+    data['low_close_ratio'] = \
+        (data['low'].values - data['close'].values) \
+        / data['close'].values
+    data['close_lastclose_ratio'] = np.zeros(len(data))
+    data.loc[1:, 'close_lastclose_ratio'] = \
+        (data['close'][1:].values - data['close'][:-1].values) \
+        / data['close'][:-1].values
+    data['volume_lastvolume_ratio'] = np.zeros(len(data))
+    data.loc[1:, 'volume_lastvolume_ratio'] = \
+        (data['volume'][1:].values - data['volume'][:-1].values) \
+        / data['volume'][:-1] \
+            .replace(to_replace=0, method='ffill') \
+            .replace(to_replace=0, method='bfill').values
+
+    for window in windows:
+        data[f'inst_ma{window}'] = data['close'].rolling(window).mean()
+        #data[f'frgn_ma{window}'] = data['volume'].rolling(window).mean()
+        data[f'inst_ma{window}_ratio'] = \
+            (data['close'] - data[f'inst_ma{window}']) / data[f'inst_ma{window}']
+        #data[f'frgn_ma{window}_ratio'] = \
+        #    (data['volume'] - data[f'frgn_ma{window}']) / data[f'frgn_ma{window}']
+        data['inst_lastinst_ratio'] = np.zeros(len(data))
+        data.loc[1:, 'inst_lastinst_ratio'] = (
+            (data['inst'][1:].values - data['inst'][:-1].values)
+            / data['inst'][:-1].replace(to_replace=0, method='ffill')\
+                .replace(to_replace=0, method='bfill').values
+        )
+        data[f'ind_ma{window}'] = data['ind'].rolling(window).mean()
+        data[f'foreign_ma{window}'] = data['foreign'].rolling(window).mean()
+
+    return data
+
+def Collecting_new_data(Stock_code,train_start_date,train_end_date,test_start_date,test_end_date):
+    datetime_object = datetime.datetime.strptime(train_start_date, '%Y-%m-%d')
+    train_start_date2=(datetime_object - relativedelta(months=7)).strftime('%Y-%m-%d')
+    
+    df = web.DataReader(Stock_code, 'naver',
+      start=train_start_date2, end=test_end_date)
+    
+    df.index.name, df.columns = 'date', ['open','high','low','close','volume']
+    df = df.astype(float)
+
+    df_part1 = stock.get_market_fundamental(train_start_date2.replace('-', ''), test_end_date.replace('-', ''), Stock_code)
+    df['per']=df_part1['PER']
+    df['pbr']=df_part1['PBR']
+    df['roe']=df_part1['PBR']/df_part1['PER']*100
+    df['diffratio']=df['close'].diff()*100
+
+    df_part2 = stock.get_market_trading_value_by_date(train_start_date2.replace('-', ''), test_end_date.replace('-', ''), Stock_code)
+    df['ind']=df_part2['개인']
+    df['ind_diff']=df_part2['개인'].diff()
+    df['inst']=df_part2['기관합계']
+    df['inst_diff']=df_part2['기관합계'].diff()
+    df['foreign']=df_part2['외국인합계']
+    df['foreign_diff']=df_part2['외국인합계'].diff()
+
+    df = preprocess(df)
+    df2 = df.dropna()
+
+    df2.to_csv(f'/content/drive/MyDrive/rl_trader_workspace/src/data/v3/{Stock_code}.csv')
+
+    return df2
