@@ -273,6 +273,7 @@ def Collecting_new_data(Stock_code,train_start_date,train_end_date,test_start_da
     df = preprocess(df)
     df2 = df.dropna()
 
+    df2 = df2[df2.index >= train_start_date]
     df2.to_csv(f'/content/drive/MyDrive/rl_trader_workspace/src/data/v3/{Stock_code}.csv')
 
     return df2
